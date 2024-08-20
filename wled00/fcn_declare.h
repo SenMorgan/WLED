@@ -63,7 +63,8 @@ class NeoGammaWLEDMethod {
 #define gamma32(c) NeoGammaWLEDMethod::Correct32(c)
 #define gamma8(c)  NeoGammaWLEDMethod::rawGamma8(c)
 uint32_t color_blend(uint32_t,uint32_t,uint16_t,bool b16=false);
-uint32_t color_add(uint32_t,uint32_t);
+uint32_t color_add(uint32_t,uint32_t, bool fast=false);
+uint32_t color_fade(uint32_t c1, uint8_t amount, bool video=false);
 inline uint32_t colorFromRgbw(byte* rgbw) { return uint32_t((byte(rgbw[3]) << 24) | (byte(rgbw[0]) << 16) | (byte(rgbw[1]) << 8) | (byte(rgbw[2]))); }
 void colorHStoRGB(uint16_t hue, byte sat, byte* rgb); //hue, sat to rgb
 void colorKtoRGB(uint16_t kelvin, byte* rgb);
@@ -104,10 +105,20 @@ void sendHuePoll();
 void onHueData(void* arg, AsyncClient* client, void *data, size_t len);
 
 //improv.cpp
+enum ImprovRPCType {
+  Command_Wifi = 0x01,
+  Request_State = 0x02,
+  Request_Info = 0x03,
+  Request_Scan = 0x04
+};
+
 void handleImprovPacket();
+void sendImprovRPCResult(ImprovRPCType type, uint8_t n_strings = 0, const char **strings = nullptr);
 void sendImprovStateResponse(uint8_t state, bool error = false);
 void sendImprovInfoResponse();
-void sendImprovRPCResponse(byte commandId);
+void startImprovWifiScan();
+void handleImprovWifiScan();
+void sendImprovIPRPCResult(ImprovRPCType type);
 
 //ir.cpp
 void applyRepeatActions();
@@ -343,6 +354,23 @@ void checkSettingsPIN(const char *pin);
 uint16_t crc16(const unsigned char* data_p, size_t length);
 um_data_t* simulateSound(uint8_t simulationId);
 void enumerateLedmaps();
+uint8_t get_random_wheel_index(uint8_t pos);
+
+// RAII guard class for the JSON Buffer lock
+// Modeled after std::lock_guard
+class JSONBufferGuard {
+  bool holding_lock;
+  public:
+    inline JSONBufferGuard(uint8_t module=255) : holding_lock(requestJSONBufferLock(module)) {};
+    inline ~JSONBufferGuard() { if (holding_lock) releaseJSONBufferLock(); };
+    inline JSONBufferGuard(const JSONBufferGuard&) = delete; // Noncopyable
+    inline JSONBufferGuard& operator=(const JSONBufferGuard&) = delete;
+    inline JSONBufferGuard(JSONBufferGuard&& r) : holding_lock(r.holding_lock) { r.holding_lock = false; };  // but movable
+    inline JSONBufferGuard& operator=(JSONBufferGuard&& r) { holding_lock |= r.holding_lock; r.holding_lock = false; return *this; };
+    inline bool owns_lock() const { return holding_lock; }
+    explicit inline operator bool() const { return owns_lock(); };
+    inline void release() { if (holding_lock) releaseJSONBufferLock(); holding_lock = false; }
+};
 
 #ifdef WLED_ADD_EEPROM_SUPPORT
 //wled_eeprom.cpp
